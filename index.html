@@ -68,7 +68,7 @@
   .ticket.w80 { width: 80mm; }
   .ticket.w82 { width: 82mm; }
   .ticket.w110 { width: 110mm; }
-  .ticket .logo { max-width: 100%; max-height: 70px; object-fit: contain; margin-bottom: 6px; }
+  .ticket .logo { display: block; max-width: 100%; max-height: 70px; object-fit: contain; margin-bottom: 6px; margin-inline-start: 0; margin-inline-end: auto; }
   .ticket .company { font-size: 15px; font-weight: bold; margin-bottom: 2px; }
   .ticket .sub { font-size: 11px; color: #333; margin-bottom: 6px; }
   .ticket .specialty { font-size: 13px; font-weight: bold; color: #2f6feb; margin-bottom: 10px; }
@@ -113,7 +113,7 @@
   @media print {
     body * { visibility: hidden; }
     .ticket, .ticket * { visibility: visible; }
-    .ticket { position: fixed; top: 0; right: 0; box-shadow: none; padding: 8mm 3mm 6mm; }
+    .ticket { position: absolute; top: 0; right: 0; box-shadow: none; padding: 1mm 3mm 4mm; page-break-inside: avoid; break-inside: avoid; page-break-after: avoid; }
     @page { margin: 0; }
     .lang-toggle { display: none !important; }
   }
@@ -272,10 +272,15 @@
         <option value="57" data-i18n="w57">57 مم</option>
         <option value="58" data-i18n="w58">58 مم (الأكثر شيوعًا)</option>
         <option value="76" data-i18n="w76">76 مم</option>
-        <option value="80" data-i18n="w80">80 مم (الأكثر شيوعًا)</option>
+        <option value="80" data-i18n="w80" selected>80 مم (الأكثر شيوعًا)</option>
         <option value="82" data-i18n="w82">82 مم</option>
         <option value="110" data-i18n="w110">110 مم</option>
+        <option value="custom" data-i18n="wCustom">مقاس مخصص</option>
       </select>
+    </div>
+    <div class="field hidden" id="customWidthField">
+      <label data-i18n="customWidthLabel">اكتبي عرض الورق بالمليمتر</label>
+      <input type="number" id="customWidthInput" min="20" max="300" step="1" placeholder="مثال: 50">
     </div>
     <button class="btn-primary w100" id="saveSettingsBtn" data-i18n="saveAllSettings">حفظ كل الإعدادات</button>
     <div class="status" id="settingsStatus"></div>
@@ -397,6 +402,8 @@ const I18N = {
     branchSubPh: 'مثال: فرع أسوان - شارع كذا',
     paperWidth: 'عرض ورق الطابعة',
     w44: '44 مم', w57: '57 مم', w58: '58 مم (الأكثر شيوعًا)', w76: '76 مم', w80: '80 مم (الأكثر شيوعًا)', w82: '82 مم', w110: '110 مم',
+    wCustom: 'مقاس مخصص',
+    customWidthLabel: 'اكتبي عرض الورق بالمليمتر',
     saveAllSettings: 'حفظ كل الإعدادات',
     resetCountersTitle: 'إعادة تعيين عدادات هذا الفرع',
     branchStaff: 'موظفو هذا الفرع',
@@ -490,6 +497,8 @@ const I18N = {
     branchSubPh: 'e.g. Aswan Branch - Main St.',
     paperWidth: 'Printer paper width',
     w44: '44 mm', w57: '57 mm', w58: '58 mm (most common)', w76: '76 mm', w80: '80 mm (most common)', w82: '82 mm', w110: '110 mm',
+    wCustom: 'Custom size',
+    customWidthLabel: 'Enter paper width in mm',
     saveAllSettings: 'Save All Settings',
     resetCountersTitle: "Reset this branch's counters",
     branchStaff: "This branch's staff",
@@ -600,7 +609,7 @@ function permLabel(p) { return t('perm' + p.charAt(0).toUpperCase() + p.slice(1)
 let currentUser = null;
 let activeBranchId = null;
 let branches = {};
-let branchData = { displayName: '', sub: '', width: '58', counters: {} };
+let branchData = { displayName: '', sub: '', width: '80', counters: {} };
 let globalSpecialties = [];
 let companySettings = { name: '', logo: '' };
 let usersInBranch = {};
@@ -627,7 +636,7 @@ async function ensureSeedData() {
   }
   const branchesSnap = await branchesRef.limit(1).get();
   if (branchesSnap.empty) {
-    await branchesRef.add({ displayName: 'الفرع الرئيسي', sub: '', width: '58', counters: {} });
+    await branchesRef.add({ displayName: 'الفرع الرئيسي', sub: '', width: '80', counters: {} });
   }
 }
 
@@ -895,7 +904,7 @@ function renderDashBranchManageList() {
 document.getElementById('dashAddBranchBtn2').addEventListener('click', async () => {
   const name = document.getElementById('dashNewBranchName2').value.trim();
   if (!name) return;
-  await branchesRef.add({ displayName: name, sub: '', width: '58', counters: {} });
+  await branchesRef.add({ displayName: name, sub: '', width: '80', counters: {} });
   document.getElementById('dashNewBranchName2').value = '';
 });
 
@@ -1104,7 +1113,7 @@ function enterBranch(branchId) {
 
   if (unsubBranchDoc) unsubBranchDoc();
   unsubBranchDoc = branchesRef.doc(activeBranchId).onSnapshot(doc => {
-    branchData = doc.data() || { displayName: '', sub: '', width: '58', counters: {} };
+    branchData = doc.data() || { displayName: '', sub: '', width: '80', counters: {} };
     document.getElementById('whoBranch').textContent = branchData.displayName || '';
     applyBranchSettingsToUI();
     renderSpecialtySelect();
@@ -1176,13 +1185,51 @@ function applyCompanyToUI() {
   }
 }
 
+function applyTicketWidth(width, customMm) {
+  const ticket = document.getElementById('ticket');
+  let mm;
+  if (width === 'custom') {
+    ticket.className = 'ticket';
+    mm = customMm || 58;
+    ticket.style.width = mm + 'mm';
+  } else {
+    ticket.style.width = '';
+    ticket.className = 'ticket w' + (width || '58');
+    mm = Number(width) || 58;
+  }
+  setDynamicPageSize(mm, null);
+}
+
+function setDynamicPageSize(mm, heightMm) {
+  let styleTag = document.getElementById('dynamicPageSize');
+  if (!styleTag) {
+    styleTag = document.createElement('style');
+    styleTag.id = 'dynamicPageSize';
+    document.head.appendChild(styleTag);
+  }
+  const h = heightMm ? (heightMm + 'mm') : 'auto';
+  styleTag.textContent = '@media print { @page { size: ' + mm + 'mm ' + h + '; margin: 0; } }';
+}
+
+function syncPageHeightToTicket() {
+  const ticket = document.getElementById('ticket');
+  const pxHeight = ticket.offsetHeight;
+  const mmHeight = (pxHeight / 96) * 25.4 + 4; // px->mm at 96dpi, +4mm safety margin
+  const w = document.getElementById('widthSelect').value;
+  const mmWidth = w === 'custom' ? (Number(document.getElementById('customWidthInput').value) || 58) : (Number(w) || 58);
+  setDynamicPageSize(mmWidth, Math.ceil(mmHeight));
+}
+
 function applyBranchSettingsToUI() {
   document.getElementById('branchDisplayName').value = branchData.displayName || '';
   document.getElementById('subText').value = branchData.sub || '';
-  document.getElementById('widthSelect').value = branchData.width || '58';
+  const w = branchData.width || '58';
+  document.getElementById('widthSelect').value = w;
+  document.getElementById('customWidthField').classList.toggle('hidden', w !== 'custom');
+  if (w === 'custom') document.getElementById('customWidthInput').value = branchData.customWidthMm || '';
   document.getElementById('subPreview').textContent = branchData.sub || '';
   document.getElementById('subPreview').style.display = branchData.sub ? 'block' : 'none';
-  document.getElementById('ticket').className = 'ticket w' + (branchData.width || '58');
+  applyTicketWidth(w, branchData.customWidthMm);
 }
 
 function settingsSaveOk(msg) {
@@ -1204,7 +1251,8 @@ document.getElementById('saveSettingsBtn').addEventListener('click', async () =>
     await branchesRef.doc(activeBranchId).set({
       displayName: document.getElementById('branchDisplayName').value,
       sub: document.getElementById('subText').value,
-      width: document.getElementById('widthSelect').value
+      width: document.getElementById('widthSelect').value,
+      customWidthMm: Number(document.getElementById('customWidthInput').value) || null
     }, { merge: true });
     settingsSaveOk(t('savedAllOk'));
   } catch (e) {
@@ -1233,8 +1281,17 @@ document.getElementById('subText').addEventListener('change', e => {
   branchesRef.doc(activeBranchId).set({ sub: e.target.value }, { merge: true }).then(() => settingsSaveOk()).catch(settingsSaveErr);
 });
 document.getElementById('widthSelect').addEventListener('change', e => {
+  document.getElementById('customWidthField').classList.toggle('hidden', e.target.value !== 'custom');
+  applyTicketWidth(e.target.value, Number(document.getElementById('customWidthInput').value));
   if (!activeBranchId) { settingsSaveErr(t('noActiveBranch')); return; }
   branchesRef.doc(activeBranchId).set({ width: e.target.value }, { merge: true }).then(() => settingsSaveOk()).catch(settingsSaveErr);
+});
+document.getElementById('customWidthInput').addEventListener('input', e => {
+  applyTicketWidth('custom', Number(e.target.value));
+});
+document.getElementById('customWidthInput').addEventListener('change', e => {
+  if (!activeBranchId) { settingsSaveErr(t('noActiveBranch')); return; }
+  branchesRef.doc(activeBranchId).set({ customWidthMm: Number(e.target.value) || null }, { merge: true }).then(() => settingsSaveOk()).catch(settingsSaveErr);
 });
 
 function renderSpecialtySelect() {
@@ -1267,29 +1324,45 @@ function updateTicketNumber(n) {
     now.toLocaleDateString(locale) + '  -  ' + now.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 }
 
-document.getElementById('printBtn').addEventListener('click', () => {
+function localISOString(d) {
+  const pad = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' +
+         pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+}
+
+document.getElementById('printBtn').addEventListener('click', async () => {
   const sp = document.getElementById('specialtySelect').value;
   if (!sp) { document.getElementById('statusMsg').textContent = t('addSpecFirst'); return; }
   const printBtn = document.getElementById('printBtn');
   if (printBtn.disabled) return;
-
-  const next = ((branchData.counters || {})[sp] || 0) + 1;
-  branchData.counters = Object.assign({}, branchData.counters, { [sp]: next });
-
-  document.getElementById('counterDisplay').textContent = next;
-  updateTicketNumber(next);
-  document.getElementById('statusMsg').textContent = t('printedMsg', { n: next, sp: sp });
-  window.print();
-
   printBtn.disabled = true;
-  setTimeout(() => { printBtn.disabled = false; }, 500);
 
-  branchesRef.doc(activeBranchId).set({ counters: branchData.counters }, { merge: true }).catch(() => {
+  try {
+    const next = await fdb.runTransaction(async (tx) => {
+      const ref = branchesRef.doc(activeBranchId);
+      const snap = await tx.get(ref);
+      const counts = (snap.data() && snap.data().counters) || {};
+      const n = (counts[sp] || 0) + 1;
+      counts[sp] = n;
+      tx.set(ref, { counters: counts }, { merge: true });
+      return n;
+    });
+
+    branchData.counters = Object.assign({}, branchData.counters, { [sp]: next });
+    document.getElementById('counterDisplay').textContent = next;
+    updateTicketNumber(next);
+    document.getElementById('statusMsg').textContent = t('printedMsg', { n: next, sp: sp });
+    syncPageHeightToTicket();
+    window.print();
+
+    branchesRef.doc(activeBranchId).collection('logs').add({
+      specialty: sp, number: next, ts: localISOString(new Date()), user: currentUser.username
+    }).catch(() => {});
+  } catch (e) {
     document.getElementById('statusMsg').textContent = t('connErr');
-  });
-  branchesRef.doc(activeBranchId).collection('logs').add({
-    specialty: sp, number: next, ts: new Date().toISOString(), user: currentUser.username
-  }).catch(() => {});
+  }
+
+  printBtn.disabled = false;
 });
 
 function renderSpecialtyTags() {
@@ -1450,7 +1523,7 @@ function renderBranchTagsManage() {
 document.getElementById('addBranchBtn2').addEventListener('click', async () => {
   const name = document.getElementById('newBranchName2').value.trim();
   if (!name) return;
-  await branchesRef.add({ displayName: name, sub: '', width: '58', counters: {} });
+  await branchesRef.add({ displayName: name, sub: '', width: '80', counters: {} });
   document.getElementById('newBranchName2').value = '';
 });
 
